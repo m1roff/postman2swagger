@@ -88,9 +88,18 @@ miroff/postman2swagger:1.0.0
 ## Разработка
 
 ```bash
-# Собрать образ локально
-make build IMAGE=my-org/postman2swagger TAG=dev
+# Собрать образ локально (текущая платформа)
+make build TAG=dev
 
-# Опубликовать
-make push IMAGE=my-org/postman2swagger TAG=1.0.0
+# Собрать и опубликовать для linux/amd64 и linux/arm64 (Mac + CI)
+make build-multiplatform TAG=1.0.3
+
+# Опубликовать уже собранный образ
+make push TAG=1.0.3
 ```
+
+### Поддержка платформ
+
+Для корректной работы и на Mac (Apple Silicon / `linux/arm64`) и в CI-окружениях (`linux/amd64`) используй `build-multiplatform` при выпуске новой версии.
+
+`make build` собирает только под текущую платформу — удобно для локальной разработки и проверки.
