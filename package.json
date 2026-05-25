@@ -1,0 +1,8 @@
+{
+  "name": "postman2swagger",
+  "version": "1.0.0",
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "postman-to-openapi": "^3.0.1"
+  }
+}

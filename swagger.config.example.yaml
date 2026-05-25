@@ -1,0 +1,9 @@
+servers:
+  - url: https://api.yourproject.com
+    description: Production
+
+replace:
+  "{{host}}": api.yourproject.com
+  "{{alert.intake.key}}": your-key-here
+  "{{alert.intake.header.timestamp}}": "1234567890"
+  "{{alert.intake.header.signature}}": "sha256=example"
