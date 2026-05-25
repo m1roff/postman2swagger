@@ -133,6 +133,27 @@ function applyReplacements(obj, replacements) {
     return obj;
 }
 
+// Apply collection variables prefixed with "openapi." as direct path assignments in the doc
+function applyOpenApiVars(openApiDoc, rawVars) {
+    const applied = [];
+    for (const v of rawVars || []) {
+        if (!v.key || !v.key.startsWith('openapi.')) continue;
+        const segments = v.key.slice('openapi.'.length).split('.');
+        let obj = openApiDoc;
+        for (let i = 0; i < segments.length - 1; i++) {
+            if (obj[segments[i]] === null || typeof obj[segments[i]] !== 'object') {
+                obj[segments[i]] = {};
+            }
+            obj = obj[segments[i]];
+        }
+        const last = segments[segments.length - 1];
+        try { obj[last] = JSON.parse(v.value); } catch { obj[last] = v.value; }
+        applied.push(`${v.key} -> ${v.value}`);
+    }
+    if (applied.length) console.log(`OpenAPI vars applied:\n  ${applied.join('\n  ')}`);
+    return openApiDoc;
+}
+
 // Mark collected headers as required in the OpenAPI document
 function applyRequiredHeaders(openApiDoc, requiredHeaders) {
     if (!requiredHeaders.size) return openApiDoc;
@@ -179,6 +200,7 @@ async function main() {
 
         let openApiDoc = fixNewlines(yaml.load(result));
         openApiDoc = applyRequiredHeaders(openApiDoc, requiredHeaders);
+        openApiDoc = applyOpenApiVars(openApiDoc, collection.variable);
 
         if (config.servers) {
             openApiDoc.servers = config.servers;
@@ -190,6 +212,12 @@ async function main() {
             openApiDoc = applyReplacements(openApiDoc, replacements);
         }
 
+        if (openApiDoc.info) {
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            openApiDoc.info['x-updated'] = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())} UTC`;
+        }
+
         let output = outputFile.endsWith('.json')
             ? JSON.stringify(openApiDoc, null, 2)
             : yaml.dump(openApiDoc);
@@ -198,9 +226,9 @@ async function main() {
         console.log((outputFile.endsWith('.json') ? 'Swagger JSON' : 'Swagger YAML') + ' saved -> ' + outputFile);
 
         const indexFile = path.join(outputDir, 'index.html');
-        if (!fs.existsSync(indexFile)) {
-            const swaggerFileName = path.basename(outputFile);
-            fs.writeFileSync(indexFile, `<!DOCTYPE html>
+        const swaggerFileName = path.basename(outputFile);
+        const indexExists = fs.existsSync(indexFile);
+        fs.writeFileSync(indexFile, `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -236,23 +264,41 @@ async function main() {
 <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
+    const specUrl = "./${swaggerFileName}";
+
     SwaggerUIBundle({
-        url: "./${swaggerFileName}",
+        url: specUrl,
         dom_id: '#swagger-ui'
     });
 
-    const observer = new MutationObserver(() => {
+    fetch(specUrl)
+        .then(r => r.json())
+        .then(spec => {
+            const updated = spec?.info?.['x-updated'];
+            if (!updated) return;
+            const obs = new MutationObserver(() => {
+                const info = document.querySelector('.swagger-ui .info');
+                if (!info || info.querySelector('.x-updated')) return;
+                const el = document.createElement('p');
+                el.className = 'x-updated';
+                el.style.cssText = 'font-size: 14px; margin: 8px 0 0; color: #3b4151;';
+                el.innerHTML = '<strong>Updated:</strong> ' + updated;
+                info.appendChild(el);
+            });
+            obs.observe(document.getElementById('swagger-ui'), { childList: true, subtree: true });
+        });
+
+    const hlObserver = new MutationObserver(() => {
         document.querySelectorAll('.renderedMarkdown pre code:not(.hljs)').forEach(el => {
             hljs.highlightElement(el);
         });
     });
-    observer.observe(document.getElementById('swagger-ui'), { childList: true, subtree: true });
+    hlObserver.observe(document.getElementById('swagger-ui'), { childList: true, subtree: true });
 </script>
 </body>
 </html>
 `);
-            console.log('index.html created -> ' + indexFile);
-        }
+        console.log('index.html ' + (indexExists ? 'updated' : 'created') + ' -> ' + indexFile);
 
     } catch (error) {
         console.error('Error:', error.message);
